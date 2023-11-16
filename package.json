@@ -1,0 +1,14 @@
+{
+  "name": "mayers",
+  "version": "1.0.0",
+  "description": "",
+  "main": "myers.js",
+  "scripts": {
+    "test": "ts-node myers.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ts-node": "^10.9.1"
+  }
+}
