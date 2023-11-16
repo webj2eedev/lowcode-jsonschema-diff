@@ -269,9 +269,13 @@ function diffCabinJ(srcCabinJ: CabinJ, dstCabinJ: CabinJ) {
     const srcScopeElement = findScope(srcCabinJ, scopeId);
     const dstScopeElement = findScope(dstCabinJ, scopeId);
     if (srcScopeElement && dstScopeElement) {
+      if (!srcScopeElement.children && !dstScopeElement.children) {
+        continue;
+      }
+
       const diffResult = diffCabinJElements(
-        srcScopeElement.children!,
-        dstScopeElement.children!,
+        srcScopeElement.children || [],
+        dstScopeElement.children || [],
         scopeId
       );
       diffResult.diff.forEach((element) => {
