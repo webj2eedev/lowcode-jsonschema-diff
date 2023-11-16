@@ -1,16 +1,10 @@
 class MyersDiff<T, E> {
   equals: (ele_a: T, ele_b: T) => boolean;
   str: (ele: T) => E;
-  scope: string;
 
-  constructor(
-    equals: (ele_a: T, ele_b: T) => boolean,
-    str: (ele: T) => E,
-    scope: string
-  ) {
+  constructor(equals: (ele_a: T, ele_b: T) => boolean, str: (ele: T) => E) {
     this.equals = equals;
     this.str = str;
-    this.scope = scope;
   }
 
   private getX(v: number[], k: number) {
@@ -129,7 +123,6 @@ class MyersDiff<T, E> {
   ) {
     const diff: Array<
       {
-        scope: string;
         operation: "insert" | "delete" | "equal";
       } & E
     > = [];
@@ -145,19 +138,16 @@ class MyersDiff<T, E> {
 
       if (x == prev_x) {
         diff.unshift({
-          scope: this.scope,
           operation: "insert",
           ...this.str(b_ele),
         });
       } else if (y == prev_y) {
         diff.unshift({
-          scope: this.scope,
           operation: "delete",
           ...this.str(a_ele),
         });
       } else {
         diff.unshift({
-          scope: this.scope,
           operation: "equal",
           ...this.str(a_ele),
         });
@@ -184,6 +174,29 @@ import cabinb from "./cabinb";
 // const a = "ABCABBA".split("");
 // const b = "CBABAC".split("");
 
+function findScope(cabinJ: CabinJ, scope: string): CabinJElement | null {
+  if (scope === "pagejson") {
+    return cabinJ.pagejson;
+  }
+
+  let target: CabinJElement | null = null;
+  function walkCabinJ(elements: Array<CabinJElement>) {
+    elements.forEach((element) => {
+      if (element.id === scope) {
+        target = element;
+        return;
+      }
+
+      if (element.children) {
+        walkCabinJ(element.children);
+      }
+    });
+  }
+  walkCabinJ(cabinJ.pagejson.children);
+
+  return target;
+}
+
 interface CabinJ {
   pagejson: {
     id: string;
@@ -201,19 +214,23 @@ function diffCabinJElements(
   dstEles: Array<CabinJElement>,
   scope: string
 ) {
-  const myers = new MyersDiff<CabinJElement, { id: string }>(
+  const myers = new MyersDiff<CabinJElement, { id: string; children: boolean }>(
     (ele_a, ele_b) => {
       return ele_a.id === ele_b.id;
     },
     (ele) => {
       return {
         id: ele.id,
+        children: !!ele.children,
       };
-    },
-    scope
+    }
   );
+
   const diff = myers.diff(srcEles, dstEles);
-  return diff;
+  return {
+    scope,
+    diff,
+  };
 }
 
 function diffCabinJ(srcCabinJ: CabinJ, dstCabinJ: CabinJ) {
@@ -224,12 +241,51 @@ function diffCabinJ(srcCabinJ: CabinJ, dstCabinJ: CabinJ) {
     throw new Error("dstCabinJ结构不对，不包含pagejson。");
   }
 
-  const diff = diffCabinJElements(
+  const result: {
+    scope: string;
+    diff: ({
+      operation: "insert" | "delete" | "equal";
+    } & {
+      id: string;
+    })[];
+  }[] = [];
+
+  const queue: Array<string> = [];
+
+  const diffResult = diffCabinJElements(
     srcCabinJ.pagejson.children,
     dstCabinJ.pagejson.children,
     "pagejson"
   );
-  console.log(JSON.stringify(diff, null, 4));
+  diffResult.diff.forEach((element) => {
+    if (element.operation === "equal" && element.children) {
+      queue.push(element.id);
+    }
+  });
+  result.push(diffResult);
+
+  while (queue.length) {
+    const scopeId = queue.shift() as string;
+    const srcScopeElement = findScope(srcCabinJ, scopeId);
+    const dstScopeElement = findScope(dstCabinJ, scopeId);
+    if (srcScopeElement && dstScopeElement) {
+      const diffResult = diffCabinJElements(
+        srcScopeElement.children!,
+        dstScopeElement.children!,
+        scopeId
+      );
+      diffResult.diff.forEach((element) => {
+        if (element.operation === "equal" && element.children) {
+          queue.push(element.id);
+        }
+      });
+      result.push(diffResult);
+    } else {
+      throw new Error("不应该找不到....");
+    }
+  }
+
+  console.log(JSON.stringify(result, null, 4));
 }
 
 diffCabinJ(cabina, cabinb);
