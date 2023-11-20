@@ -8,8 +8,11 @@ export default {
     type: "nfreescenecabin",
     version: "1.0",
     attributes: {
-      initMethod: "generateData",
+      attr1: "value1",
+      attr2: "value2",
+      initMethod: "generateDataA",
       hotKeys: [],
+      zttr1: "zttr1",
     },
     children: [
       {

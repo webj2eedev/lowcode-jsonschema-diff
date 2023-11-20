@@ -200,12 +200,14 @@ function findScope(cabinJ: CabinJ, scope: string): CabinJElement | null {
 interface CabinJ {
   pagejson: {
     id: string;
+    attributes: Record<string, unknown>;
     children: Array<CabinJElement>;
   };
 }
 
 interface CabinJElement {
   id: string;
+  attributes: Record<string, unknown>;
   children?: Array<CabinJElement>;
 }
 
@@ -233,6 +235,91 @@ function diffCabinJElements(
   };
 }
 
+function diffAttr(
+  scope: string,
+  srcAttrs: Record<string, unknown>,
+  dstAttrs: Record<string, unknown>
+): {
+  scope: string;
+  diff: {
+    operation: "insert" | "delete" | "equal" | "change";
+    key: string; // insert\delete\equal\change
+    value?: unknown; // insert
+    srcValue?: unknown; // change
+    dstValue?: unknown; // change
+  }[];
+} {
+  const diff: {
+    operation: "insert" | "delete" | "equal" | "change";
+    key: string; // insert\delete\equal\change
+    value?: unknown; // insert
+    srcValue?: unknown; // change
+    dstValue?: unknown; // change
+  }[] = [];
+
+  const srcKeys = Object.keys(srcAttrs).sort();
+  const dstKeys = Object.keys(dstAttrs).sort();
+
+  let i = 0;
+  let j = 0;
+  while (i < srcKeys.length && j < dstKeys.length) {
+    if (srcKeys[i] === dstKeys[j]) {
+      if (
+        JSON.stringify(srcAttrs[srcKeys[i]]) ===
+        JSON.stringify(dstAttrs[dstKeys[j]])
+      ) {
+        diff.push({ operation: "equal", key: srcKeys[i] });
+      } else {
+        diff.push({
+          operation: "change",
+          key: srcKeys[i],
+          srcValue: srcAttrs[srcKeys[i]],
+          dstValue: dstAttrs[dstKeys[j]],
+        });
+      }
+      i++;
+      j++;
+    } else if (srcKeys[i] < dstKeys[j]) {
+      diff.push({
+        operation: "delete",
+        key: srcKeys[i],
+      });
+      i++;
+    } else if (srcKeys[i] > dstKeys[j]) {
+      diff.push({
+        operation: "insert",
+        key: dstKeys[j],
+        value: dstAttrs[dstKeys[j]],
+      });
+      j++;
+    } else {
+      throw new Error("不应该跑到这里...");
+    }
+  }
+
+  while (i < srcKeys.length) {
+    diff.push({
+      operation: "delete",
+      key: srcKeys[i],
+    });
+    i++;
+  }
+
+  while (j < dstKeys.length) {
+    diff.push({
+      operation: "insert",
+      key: dstKeys[j],
+      value: dstAttrs[dstKeys[j]],
+    });
+    j++;
+  }
+
+  return {
+    scope,
+    diff,
+  };
+}
+
 function diffCabinJ(srcCabinJ: CabinJ, dstCabinJ: CabinJ) {
   if (!srcCabinJ.pagejson) {
     throw new Error("srcCabinJ结构不对，不包含pagejson。");
@@ -241,7 +328,20 @@ function diffCabinJ(srcCabinJ: CabinJ, dstCabinJ: CabinJ) {
     throw new Error("dstCabinJ结构不对，不包含pagejson。");
   }
 
-  const result: {
+  // 属性 Diff
+  const attrDiff: Array<{
+    scope: string;
+    diff: {
+      operation: "insert" | "delete" | "equal" | "change";
+      key: string; // insert\delete\equal\change
+      value?: unknown; // insert
+      srcValue?: unknown; // change
+      dstValue?: unknown; // change
+    }[];
+  }> = [];
+
+  // 结构 Diff
+  const structDiff: {
     scope: string;
     diff: ({
       operation: "insert" | "delete" | "equal";
@@ -257,17 +357,38 @@ function diffCabinJ(srcCabinJ: CabinJ, dstCabinJ: CabinJ) {
     dstCabinJ.pagejson.children,
     "pagejson"
   );
+
+  // 元素相等的时候，需要计算属性差异
+  attrDiff.push(
+    diffAttr(
+      "pagejson",
+      srcCabinJ.pagejson.attributes,
+      dstCabinJ.pagejson.attributes
+    )
+  );
+
   diffResult.diff.forEach((element) => {
     if (element.operation === "equal" && element.children) {
       queue.push(element.id);
     }
   });
-  result.push(diffResult);
+  structDiff.push(diffResult);
 
   while (queue.length) {
+    // 说明有相等的结构
     const scopeId = queue.shift() as string;
     const srcScopeElement = findScope(srcCabinJ, scopeId);
     const dstScopeElement = findScope(dstCabinJ, scopeId);
+
+    // 元素相等的时候，需要计算属性差异
+    attrDiff.push(
+      diffAttr(
+        scopeId,
+        srcScopeElement!.attributes,
+        dstScopeElement!.attributes
+      )
+    );
+
     if (srcScopeElement && dstScopeElement) {
       if (!srcScopeElement.children && !dstScopeElement.children) {
         continue;
@@ -283,16 +404,21 @@ function diffCabinJ(srcCabinJ: CabinJ, dstCabinJ: CabinJ) {
           queue.push(element.id);
         }
       });
-      result.push(diffResult);
+      structDiff.push(diffResult);
     } else {
       throw new Error("不应该找不到....");
     }
   }
 
-  console.log(JSON.stringify(result, null, 4));
+  return {
+    structDiff,
+    attrDiff,
+  };
 }
 
-diffCabinJ(cabina, cabinb);
+const { structDiff, attrDiff } = diffCabinJ(cabina, cabinb);
+// console.log("structDiff:" + JSON.stringify(structDiff, null, 4));
+console.log("attrDiff:" + JSON.stringify(attrDiff, null, 4));
 
 // console.log(JSON.stringify(diff, null, 4));
 
